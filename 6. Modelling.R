@@ -9,6 +9,7 @@ require(mgcv)
 require(boot)
 require(sp)
 require(gratia)
+require(grid)
 
 ##load model data
 
@@ -120,7 +121,7 @@ BootstrapParameters1 <- rmvnorm(500, coefs, varcov)
 par(mfrow=c(1,2))
 
 ### Benthos
-start=8; finish=10; Variable=dives_in_meygen_df$bathymetry; xlabel="Benthos"; ylabel="Proportion of dives in risk zone"
+start=8; finish=10; Variable=dives_in_meygen_df$bathymetry; xlabel="Benthos"; ylabel="Proportion of dive in risk zone"
   PlottingVar1<-seq(min(Variable), max(Variable), length=500)
 
 CenterVar1<-model.matrix(fit1)[,c(1,start:finish)]*coef(fit1)[c(1,start:finish)]
@@ -136,13 +137,13 @@ BootstrapFits1<-Basis1%*%t(BootstrapCoefs1)
   cis1<-apply(BootstrapFits1, 1, quant.func1)-mean(CenterVar1)
   cis1a<-inv.logit(cis1)
 
-plot(PlottingVar1,(RealFitCenter1a), type="l", col=1,ylim=c(0, 1),xlab=xlabel, ylab=ylabel, xlim=c(min(PlottingVar1),max(PlottingVar1)), main="Benthos", cex.lab = 1.5, cex.axis=1.5)
+plot(PlottingVar1,(RealFitCenter1a), type="l", col=1,ylim=c(0, 1),xlab=xlabel, ylab=ylabel, xlim=c(min(PlottingVar1),max(PlottingVar1)), main="", cex.lab = 1.5, cex.axis=1.5)
   segments(PlottingVar1,(cis1a[1,]),PlottingVar1,(cis1a[2,]), col="grey", main = "Bathymetry relationship")
   lines(PlottingVar1,(RealFitCenter1a),lwd=2, col=1)
   rug(Variable)
 
 ### Tide
-start=1; finish=7; Variable=dives_in_meygen_df$TimeAroundHW; xlabel="Time Around High Water"; ylabel="Proportion of dives in risk zone"
+start=1; finish=7; Variable=dives_in_meygen_df$TimeAroundHW; xlabel="Hours Around High Water"; ylabel="Proportion of dive in risk zone"
   PlottingVar1<-seq(min(Variable), max(Variable), length=500)
 
 CenterVar1<-model.matrix(fit1)[,c(1,start:finish)]*coef(fit1)[c(1,start:finish)]
@@ -158,7 +159,7 @@ BootstrapFits1<-Basis1%*%t(BootstrapCoefs1)
   cis1<-apply(BootstrapFits1, 1, quant.func1)-mean(CenterVar1)
   cis1a<-inv.logit(cis1)
 
-plot(PlottingVar1,(RealFitCenter1a), type="l", col=1,ylim=c(0, 1),xlab=xlabel, ylab=ylabel, xlim=c(min(PlottingVar1),max(PlottingVar1)), main="Benthos", cex.lab = 1.5, cex.axis=1.5)
+plot(PlottingVar1,(RealFitCenter1a), type="l", col=1,ylim=c(0, 1),xlab=xlabel, ylab=ylabel, xlim=c(min(PlottingVar1),max(PlottingVar1)), main="", cex.lab = 1.5, cex.axis=1.5)
   segments(PlottingVar1,(cis1a[1,]),PlottingVar1,(cis1a[2,]), col="grey", main = "Bathymetry relationship")
   lines(PlottingVar1,(RealFitCenter1a),lwd=2, col=1)
   rug(Variable)
@@ -204,12 +205,20 @@ plot(PlottingVar1,(RealFitCenter1a), type="l", col=1,ylim=c(0, 1),xlab=xlabel, y
     scale_fill_viridis_c() +
     annotation_spatial(data=pent_lr)+
     theme_bw() +
-    ggtitle(paste(plot_tide_names[i]))
+    ggtitle(paste(plot_tide_names[i])) +
+   labs(fill = "")
  
  assign(paste(plot_tide_names[i]), p)
   
   }
 
 
-gridExtra::grid.arrange(LowWater, Flood, HighWater, Ebb)  
+gridExtra::grid.arrange(LowWater, Flood, HighWater, Ebb, top=textGrob("Predicted proportion of time in risk zone", gp = gpar(fontsize = 20, fontface = 'bold')))  
   
+
+##################################################################################################################################
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Orientation
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##################################################################################################################################
+
