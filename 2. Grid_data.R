@@ -51,67 +51,77 @@ seal$angle_geo <- as.numeric(unlist(angles))
 ###################
 seal_sf <- st_as_sf(seal, coords=c("lon", "lat"), crs=4326) %>%
     st_transform(32630)
-  
-pent_grid <- seal_sf %>%
-    st_make_grid(cellsize = 10000) %>%
-    st_sf(grid_id = 1:length(.))
 
-#####next to do - extract the grid_points so we have something to map the annotations to 
-
-grid_points <-  pent_grid %>%
-  st_centroid() %>%
-  st_coordinates() %>%
-  st_sfc() %>%
-  st_sf()# add locations of centroids so can map plots to specific locations
-
-ggplot()+
-    layer_spatial(data=st_sf(points=st_sfc(st_multipoint(matrix(as.numeric(pent_grid$x), as.numeric(pent_grid$y), ,2)), crs=32630), aes(fill=grid_id)) +
-    annotation_spatial(data=pent_lr)
-  
-grid_id <- seal_sf %>% st_join(pent_grid, join = st_intersects) %>% as.data.frame()
-  seal$grid_id <- grid_id$grid_id
-  seal_sf$grid_id <- grid_id$grid_id
-  
-###################
-  
   seals_in_meygen_sf <- st_join(seal_sf, lease_site, join=st_within)
   seals_in_meygen_df <- seal[which(!is.na(seals_in_meygen_sf$Lease_Star), arr.ind=TRUE),] # have done all this fannying around as st_geomtery seems to round off the locations when retreiving from sf so subset the data frame before creating the snipped sf object
   seals_in_meygen_sf <- filter(seals_in_meygen_sf, !is.na(Lease_Star))
   
+lease_grid <- seals_in_meygen_sf %>%
+    st_make_grid(cellsize = 500) %>%
+    st_sf(grid_id = 1:length(.)) 
+
+seals_in_meygen_df$grid_id <- st_join(seals_in_meygen_sf, lease_grid, join = st_intersects)$grid_id
+
+ggplot()+
+  annotation_spatial(data=lease_grid) +
+  layer_spatial(seals_in_meygen_sf) +
+  NULL
+
+##### next to do - extract the grid_points so we have something to map the annotations to 
+
+grid_points <-  lease_grid %>%
+  st_centroid() %>%
+  st_coordinates() %>%
+  as_tibble() %>%
+  mutate(grid_id=1:nrow(.)) %>%
+  st_as_sf(coords=c("X", "Y"), crs=32630) 
+  # add locations of centroids so can map plots to specific locations
+
+ggplot()+
+  geom_sf(data=lease_grid)+
+  geom_sf(data=grid_points, aes(colour=grid_id))+
+   NULL
+  
+###################
+  
+
 
 geo_angle_plots <- seals_in_meygen_df %>%
   nest(-grid_id) %>%
   mutate(plot = map2(data, grid_id, 
-                     ~ ggplot(.x) + 
-                       ggtitle(.y) + 
+                     ~ ggplot(.x) +  
                        theme_bw() +
                        geom_histogram(aes(x=angle_geo))+
-                       coord_polar()))
+                       coord_polar(start=0, direction = 1)+
+                       scale_x_continuous(breaks=seq(0, 360, by=90), expand=c(0,0), lim=c(0, 360))+
+                       xlab("")+
+                       ylab("")+
+                       theme(axis.text.y = element_blank(),
+                         axis.ticks = element_blank())))
 
-
-plot_locations <- seals_in_meygen_sf %>%
-  st_make_grid(cellsize = 10000, what="centers") %>%
-  st_sf(grid_id = 1:length(.))# get plot locations which is just the coordinates of the unique grid cells the plots lie in
-
-ggplot()+geom_sf(data=plot_locations)
-
-angle_plot_anotations <- plot_locations %>%
+angle_plot_annotations <- grid_points %>%
  bind_cols(as_tibble(st_coordinates(.))) %>%
-  #st_drop_geometry() %>%
-  select(grid_id, X, Y) %>%
-  left_join(geo_angle_plots, by = "grid_id") %>%
-  mutate(annotation = pmap(list(X, Y, plot),
+  st_drop_geometry() %>%
+  #select(grid_id, X, Y) %>%
+  left_join(geo_angle_plots, by = "grid_id") 
+  
+  angle_plot_annotations <- angle_plot_annotations[!angle_plot_annotations$plot=="NULL",]
+
+  angle_plot_annotations <- angle_plot_annotations %>%
+    mutate(annotation = pmap(list(X, Y, plot),
                            ~ annotation_custom(ggplotGrob(..3),
-                                               xmin = ..1 - 2000, xmax = ..1 + 2000,
-                                               ymin = ..2 - 1000, ymax = ..2 + 1000))) %>%
+                                               xmin = ..1 - 250, xmax = ..1 + 250,
+                                               ymin = ..2 - 250, ymax = ..2 + 250))) %>%
   pull(annotation)
 
-ggplot()+
-    geom_histogram(data=seals_in_meygen_df, aes(x=angle_geo))+
-    coord_polar()+
-    facet_wrap(~grid_id)+
-      theme_bw()
+coords_for_plot <- st_coordinates(seals_in_meygen_sf) # need a buffer around the edges rather than just using ggspatial so this helps us call it easily inside the plot function
 
-
-
+ggplot(grid_points)+
+  xlim(c(min(coords_for_plot[,1])-500, max(coords_for_plot[,1]+500)))+
+  ylim(c(min(coords_for_plot[,2])-500, max(coords_for_plot[,2]+500)))+
+  geom_sf(alpha=0)+
+  angle_plot_annotations +
+  geom_sf(data=pent_hr)+
+  theme_classic()+
+  NULL
   
