@@ -3,12 +3,13 @@ require(gganimate)
 require(lubridate)
 require(ggspatial)
 
+################################## 
+#Trying with MoveVis
+################################## 
 seal_move <- seal %>%
   mutate(datetime=as.POSIXct(datetime)) %>%
   df2move(proj="+init=epsg:4326 +proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0", x="lon", y="lat", time="datetime", track_id="tag") %>%
   align_move(res=10, unit="mins")
-
-
 
 
 frames <- frames_spatial(seal_move[1:1000], map_service = "carto", map_type = "voyager_no_labels", alpha = 0.5)%>%  # path
@@ -20,8 +21,10 @@ frames <- frames_spatial(seal_move[1:1000], map_service = "carto", map_type = "v
 animate_frames(frames[1:100], out_file = "plots/animation.gif", overwrite = TRUE)
 
 
-######################
+##################################
 #try with custom
+################################## 
+
 seal_move <- seal[1:100,] %>%
   dplyr::mutate(date_time = ymd_hms(datetime)) %>%
   dplyr::mutate(hour = lubridate::yday(date_time)) %>%
