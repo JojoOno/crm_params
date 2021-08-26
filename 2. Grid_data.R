@@ -18,6 +18,14 @@ lease_site <- st_read("data/mapping/wave-and-tidal-proposed-sites/TCE_Lease_Tide
   st_crop(xmin=-4, xmax=-3.1, ymin=57, ymax=58.7) %>% # just keep meygen
   st_transform(32630)
 
+flow_rate_shape <- st_read("data/mapping/Tidal model/Voronoi Polygons - Flow.shp") %>% 
+  st_set_crs(4326) %>%
+  st_transform(32630)
+
+ggplot()+
+  geom_sf(data=flow_rate_shape, aes(fill=spring, colour=spring))+
+  scale_fill_viridis_c()+
+  scale_colour_viridis_c()
 ################
 
 
@@ -97,7 +105,9 @@ geo_angle_plots <- seals_in_meygen_df %>%
                        xlab("")+
                        ylab("")+
                        theme(axis.text.y = element_blank(),
-                         axis.ticks = element_blank())))
+                         axis.ticks = element_blank(),
+                         plot.background = element_rect(fill = "transparent")) 
+                     ))
 
 angle_plot_annotations <- grid_points %>%
  bind_cols(as_tibble(st_coordinates(.))) %>%
@@ -117,6 +127,9 @@ angle_plot_annotations <- grid_points %>%
 coords_for_plot <- st_coordinates(seals_in_meygen_sf) # need a buffer around the edges rather than just using ggspatial so this helps us call it easily inside the plot function
 
 ggplot(grid_points)+
+  annotation_spatial(data=flow_rate_shape, aes(fill=spring, colour=spring))+
+  scale_fill_viridis_c()+
+  scale_colour_viridis_c()+
   xlim(c(min(coords_for_plot[,1])-500, max(coords_for_plot[,1]+500)))+
   ylim(c(min(coords_for_plot[,2])-500, max(coords_for_plot[,2]+500)))+
   geom_sf(alpha=0)+
