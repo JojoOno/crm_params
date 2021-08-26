@@ -27,14 +27,16 @@ animate_frames(frames[1:100], out_file = "plots/animation.gif", overwrite = TRUE
 
 seal_move <- seal[1:100,] %>%
   dplyr::mutate(date_time = ymd_hms(datetime)) %>%
-  dplyr::mutate(hour = lubridate::yday(date_time)) %>%
+  dplyr::mutate(hour = lubridate::round_date(date_time, "5 mins")) %>%
   sf::st_as_sf(crs = 4326, coords=c("lon", "lat")) %>% 
   sf::st_transform(crs=32630) %>%
   dplyr::arrange(tag,hour) %>% 
   dplyr::group_by(tag,hour) %>% 
-  dplyr::summarise(do_union = FALSE)
+  dplyr::summarise(do_union=FALSE)
 
 anim_data <- seal_move
+anim_data
+class(anim_data$hour)
 
 animated_plot <- ggplot() +
   annotation_spatial(pent_lr, fill = "grey", lwd = 0) +
@@ -45,4 +47,4 @@ animated_plot <- ggplot() +
   shadow_wake(wake_length = 0.1)
 
 gganimate::animate(animated_plot)
-range(seal_move$hour)
+class(seal_move$date_time)
