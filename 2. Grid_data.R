@@ -91,8 +91,8 @@ ggplot()+
    NULL
   
 ###################
-  
-
+# Plot geo-angles on grid  
+###################
 
 geo_angle_plots <- seals_in_meygen_df %>%
   nest(-grid_id) %>%
@@ -130,11 +130,68 @@ ggplot(grid_points)+
   annotation_spatial(data=flow_rate_shape, aes(fill=spring, colour=spring))+
   scale_fill_viridis_c()+
   scale_colour_viridis_c()+
+  labs(fill = expression(paste("Peak Spring Flow Speed ", (m.s^-1))))+
+  guides(colour=FALSE) +
+  theme(legend.position = "bottom") +
   xlim(c(min(coords_for_plot[,1])-500, max(coords_for_plot[,1]+500)))+
   ylim(c(min(coords_for_plot[,2])-500, max(coords_for_plot[,2]+500)))+
   geom_sf(alpha=0)+
   angle_plot_annotations +
   geom_sf(data=pent_hr)+
+  labs(title = "Movement angle", subtitle = "Geospace")+
   theme_classic()+
+  theme(text = element_text(family="serif", size=24), legend.position = "bottom")+
   NULL
   
+###################
+# Plot hydro-angles on grid  
+###################
+
+hydro_angle_plots <- seals_in_meygen_df %>%
+  nest(-grid_id) %>%
+  mutate(plot = map2(data, grid_id, 
+                     ~ ggplot(.x) +  
+                       theme_bw() +
+                       geom_histogram(aes(x=angle_hydro))+
+                       coord_polar(start=0, direction = 1)+
+                       scale_x_continuous(breaks=seq(0, 360, by=90), expand=c(0,0), lim=c(0, 360))+
+                       xlab("")+
+                       ylab("")+
+                       theme(axis.text.y = element_blank(),
+                             axis.ticks = element_blank(),
+                             plot.background = element_rect(fill = "transparent")) 
+  ))
+
+angle_plot_annotations <- grid_points %>%
+  bind_cols(as_tibble(st_coordinates(.))) %>%
+  st_drop_geometry() %>%
+  #select(grid_id, X, Y) %>%
+  left_join(hydro_angle_plots, by = "grid_id") 
+
+angle_plot_annotations <- angle_plot_annotations[!angle_plot_annotations$plot=="NULL",]
+
+angle_plot_annotations <- angle_plot_annotations %>%
+  mutate(annotation = pmap(list(X, Y, plot),
+                           ~ annotation_custom(ggplotGrob(..3),
+                                               xmin = ..1 - 250, xmax = ..1 + 250,
+                                               ymin = ..2 - 250, ymax = ..2 + 250))) %>%
+  pull(annotation)
+
+coords_for_plot <- st_coordinates(seals_in_meygen_sf) # need a buffer around the edges rather than just using ggspatial so this helps us call it easily inside the plot function
+
+ggplot(grid_points)+
+  annotation_spatial(data=flow_rate_shape, aes(fill=spring, colour=spring))+
+  scale_fill_viridis_c()+
+  scale_colour_viridis_c()+
+  labs(fill = expression(paste("Peak Spring Flow Speed ", (m.s^-1))))+
+  guides(colour=FALSE) +
+  xlim(c(min(coords_for_plot[,1])-500, max(coords_for_plot[,1]+500)))+
+  ylim(c(min(coords_for_plot[,2])-500, max(coords_for_plot[,2]+500)))+
+  geom_sf(alpha=0)+
+  angle_plot_annotations +
+  geom_sf(data=pent_hr)+
+  labs(title = "Movement angle", subtitle = "Hydrospace")+
+  theme_classic()+
+  theme(text = element_text(family="serif", size=24), legend.position = "bottom")+
+  NULL
+
