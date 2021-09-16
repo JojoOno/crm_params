@@ -167,19 +167,22 @@ plot(PlottingVar1,(RealFitCenter1a), type="l", col=1,ylim=c(0, 1),xlab=xlabel, y
 
 ### Location predictions
 
-  predgrid <- data.frame(expand.grid(lat=seq(min(df$lat-0.01), max(df$lat+0.01), length.out = 50),
-                                     lon=seq(min(df$lon-0.01), max(df$lon+0.01), length.out = 50),
+  predgrid <- data.frame(expand.grid(lat=seq(min(dives_in_meygen_df$lat-0.01), max(dives_in_meygen_df$lat+0.01), length.out = 50),
+                                     lon=seq(min(dives_in_meygen_df$lon-0.01), max(dives_in_meygen_df$lon+0.01), length.out = 50),
                                      TimeAroundHW=seq(-6, 6, by=1)))
   
+ predgrid_sf <- st_join(st_as_sf(predgrid, coords=c("lon", "lat"), crs=4326), meygen, join=st_within)
+  predgrid_df <- predgrid[which(!is.na(predgrid_sf$Lease_Star), arr.ind=TRUE),] # have done all this fannying around as st_geomtery seems to round off the locations when retreiving from sf so subset the data frame before creating the snipped sf object
+
   benthos <- raster::raster("data/mapping/Benthic/D4_2018.asc/benthos.tif")
   
-  coordinates(predgrid) <- ~ lon+lat
+  coordinates(predgrid_df) <- ~ lon+lat
   
-  predgrid$bathymetry <- abs(raster::extract(benthos, predgrid))
-  predgrid$bathymetry <- ifelse(predgrid$bathymetry < 0, 0, predgrid$bathymetry)
-  predgrid <- na.omit(as.data.frame(predgrid))
+  predgrid_df$bathymetry <- abs(raster::extract(benthos, predgrid_df))
+  predgrid_df$bathymetry <- ifelse(predgrid_df$bathymetry < 0, 0, predgrid_df$bathymetry)
+  predgrid_df <- na.omit(as.data.frame(predgrid_df))
   
-  new_spline <- cSplineDes(predgrid$TimeAroundHW, 
+  new_spline <- cSplineDes(predgrid_df$TimeAroundHW, 
                            knots = seq(min(df$TimeAroundHW),
                                        max(df$TimeAroundHW),
                                        length.out = 8),
@@ -187,7 +190,7 @@ plot(PlottingVar1,(RealFitCenter1a), type="l", col=1,ylim=c(0, 1),xlab=xlabel, y
   
   colnames(new_spline) <- paste0("cyclic.", 1:ncol(new_spline))
   
-  newdf <- cbind(new_spline, predgrid)
+  newdf <- cbind(new_spline, predgrid_df)
   
   plot_tide_time <- c(-6, -3, 0, 3)
   plot_tide_names <- c("LowWater", "Flood", "HighWater", "Ebb")
@@ -202,8 +205,8 @@ plot(PlottingVar1,(RealFitCenter1a), type="l", col=1,ylim=c(0, 1),xlab=xlabel, y
   
  p <- ggplot()+
     geom_tile(data=tide_predgrid, aes(x=lon, y=lat, fill=preds)) +
-    scale_fill_viridis_c() +
-    annotation_spatial(data=pent_lr)+
+    scale_fill_viridis_c(limits=c(0,1)) +
+    annotation_spatial(data=pent_hr)+
     theme_bw() +
     ggtitle(paste(plot_tide_names[i])) +
    labs(fill = "")
