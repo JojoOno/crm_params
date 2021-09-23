@@ -391,11 +391,12 @@ for(i in 1:length(plot_tide_time)) {
   
   tide_predgrid <- newdf[newdf$TimeAroundHW==tide_time,]
   tide_predgrid$preds <- predict(fit1, tide_predgrid, type="response")
+  tide_predgrid$preds <- ifelse(tide_predgrid$preds>180, 180, tide_predgrid$preds)
   
   
   p <- ggplot()+
-    geom_tile(data=tide_predgrid, aes(x=lon, y=lat, fill=preds)) +
-    scale_fill_viridis_c(limits=c(-90,90)) +
+    geom_tile(data=tide_predgrid, aes(x=lon, y=lat, fill=abs(preds))) +
+    scale_fill_viridis_c(limits=c(0,180)) +
     # annotation_spatial(data=pent_hr)+
     theme_bw() +
     ggtitle(paste(plot_tide_names[i])) +
