@@ -510,9 +510,9 @@ for(i in 1:length(sites)) {
 }
 
 
-gridExtra::grid.arrange(LowWaterBrims, FloodBrims, HighWaterBrims, EbbBrims, top=textGrob("Predicted proportion of time in risk zone", gp = gpar(fontsize = 20, fontface = 'bold')))  
-gridExtra::grid.arrange(LowWaterMeygen, FloodMeygen, HighWaterMeygen, EbbMeygen, top=textGrob("Predicted proportion of time in risk zone", gp = gpar(fontsize = 20, fontface = 'bold')))  
-gridExtra::grid.arrange(LowWaterSPR, FloodSPR, HighWaterSPR, EbbSPR, top=textGrob("Predicted proportion of time in risk zone", gp = gpar(fontsize = 20, fontface = 'bold')))  
+gridExtra::grid.arrange(LowWaterBrims, FloodBrims, HighWaterBrims, EbbBrims, top=textGrob("Predicted proportion of time in risk zone - Brims", gp = gpar(fontsize = 20, fontface = 'bold')))  
+gridExtra::grid.arrange(LowWaterMeygen, FloodMeygen, HighWaterMeygen, EbbMeygen, top=textGrob("Predicted proportion of time in risk zone - MeyGen", gp = gpar(fontsize = 20, fontface = 'bold')))  
+gridExtra::grid.arrange(LowWaterSPR, FloodSPR, HighWaterSPR, EbbSPR, top=textGrob("Predicted proportion of time in risk zone - SPR", gp = gpar(fontsize = 20, fontface = 'bold')))  
 
 
 
