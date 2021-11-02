@@ -23,9 +23,17 @@ flow_rate_shape <- st_read("data/mapping/Tidal model/Voronoi Polygons - Flow.shp
   st_transform(32630)
 
 ggplot()+
-  geom_sf(data=flow_rate_shape, aes(fill=spring, colour=spring))+
-  scale_fill_viridis_c()+
-  scale_colour_viridis_c()
+  layer_spatial(data=flow_rate_shape, aes(fill=spring, colour=spring))+
+  scale_fill_viridis_c(name="Mean Spring Flow Rate (m/s)")+
+  scale_colour_viridis_c()+
+  #guides(color=guide_legend("spring"), fill = FALSE)+
+  theme(axis.text = element_text(size=30, family="serif"),
+        legend.text = element_text(family="serif"),
+        legend.title = element_text(family="serif"))+
+  theme_bw()+
+  annotation_spatial(data=pent_lr)+
+    NULL
+
 ################
 
 
@@ -195,3 +203,52 @@ ggplot(grid_points)+
   theme(text = element_text(family="serif", size=24), legend.position = "bottom")+
   NULL
 
+###########################################################
+# Extra Processing
+
+seals_in_meygen_df <- seals_in_meygen_df %>%
+  mutate(angle_180=ifelse(.$angle_hydro>180, .$angle_hydro-180, .$angle_hydro),
+         current_180=ifelse(.$current_di>180, .$current_di-180, .$current_di)) %>%
+    mutate(swimdiff = abs(current_180 - angle_180))
+
+
+Tides11 <- read_csv("data/GillsBay2011_2012.csv") 
+Tides16 <- read_csv("data/GillsBay2016_2018.csv") 
+Tides <- rbind(Tides11, Tides16)
+
+Tides$Tide <- "NA"                                                  
+Tides$Tide[1] <- ifelse(Tides$Level_m[1] < Tides$Level_m[2], "LW", "HW")  
+for (i in 2:NROW(Tides)){                                           # loop for remaining rows
+  Tides$Tide[i] <- ifelse(Tides$Level_m[i] < Tides$Level_m[i-1], "LW", "HW")  # if height lower than row above = "LW", else "HW"
+}
+
+
+nearest.time <- function(x, y, key = "mid_dt"){y[which.min(abs(difftime(x, y$mid_dt))),key]}
+
+# subset tide data to HW only
+HW2016.2018 <- Tides[Tides$Tide == "HW",]
+
+# create posixct DateTime columns
+HW2016.2018$mid_dt <- as.POSIXct(paste(HW2016.2018$Date, HW2016.2018$Time), format="%d/%m/%Y %H:%M", origin="1970-01-01", tz = "UTC")
+
+# new column of time of nearest high water
+seals_in_meygen_df$NearestHW <- as.POSIXct(unlist(mapply(function(x) nearest.time(x, HW2016.2018), as.POSIXct(seals_in_meygen_df$datetime))), origin="1970-01-01", tz = "UTC")
+
+# column of time around nearest high water
+seals_in_meygen_df$TimeAroundHW <- difftime(as.POSIXct(seals_in_meygen_df$datetime), seals_in_meygen_df$NearestHW, units = "hours")
+seals_in_meygen_df$TimeAroundHW <- as.numeric(seals_in_meygen_df$TimeAroundHW)
+
+
+benthos <- raster::raster("data/Mapping/Benthic/D4_2018.asc/benthos.tif")
+
+coordinates(seals_in_meygen_df) <- ~lon+lat
+
+seals_in_meygen_df$bathymetry <- abs(raster::extract(benthos, seals_in_meygen_df))
+seals_in_meygen_df$bathymetry <- ifelse(seals_in_meygen_df$bathymetry < 0, 0, seals_in_meygen_df$bathymetry)
+
+seals_in_meygen_df <- as.data.frame(seals_in_meygen_df) %>%
+  drop_na(bathymetry) %>% #some dives will be effectively on land given the reslution of the depth data
+  filter(bathymetry>0)%>%
+  filter(TimeAroundHW<250)
+
+save(seals_in_meygen_df, file="data/mod-move-dat.Rd")
