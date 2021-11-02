@@ -71,7 +71,7 @@ dives_in_pentland_sf <- filter(dives_in_pentland_sf, !is.na(Lease_Star))
 ## all dives
 ggplot()+
   annotation_spatial(data=pent_lr) +
-  geom_sf(data=meygen,  alpha=0.5) +
+  #geom_sf(data=meygen_lease,  alpha=0.5) +
   layer_spatial(data=dive_sf, aes(colour=max_depth))+
   scale_colour_viridis_c(name="Dive Depth (m)")+
   theme_bw()+
@@ -153,10 +153,30 @@ fit1 <- geepack::geeglm(model,
                         id=as.factor(ref),
                         corstr = "independence")
 
-acf(fit1$residuals)
+
 summary(fit1)
-aod::wald.test(coef(fit1))
-## Partial effects
+anova(fit1)
+
+#Analysis of 'Wald statistic' Table
+#Model: binomial, link: logit
+#Response: prop_risk
+#Terms added sequentially (first to last)
+
+#Df                       X2        P(>|Chi|)    
+#cyclic.1                 1  0.0    0.9908    
+#cyclic.2                 1  1.4    0.2331    
+#cyclic.3                 1  2.7    0.1028    
+#cyclic.4                 1  1.4    0.2374    
+#cyclic.5                 1  1.4    0.2405    
+#cyclic.6                 1  9.3    0.0023 ** 
+#cyclic.7                 1  5.7    0.0168 *  
+#splines::bs(bathymetry)  3 12.5    0.0060 ** 
+#splines::bs(lon + lat)   3 62.6   1.6e-13 ***
+#  ---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+### Partial effects
 #~~~~~~~~~~~~~~~~~~~~~~~~~
 
 quant.func<- function(x){quantile(x, probs=c(0.05,0.95))} # ci levels
@@ -311,7 +331,7 @@ gridExtra::grid.arrange(LowWater, Flood, HighWater, Ebb, top=textGrob("Predicted
 ##################################################################################################################################
 dives_in_pentland_df <- arrange(dives_in_pentland_df, ref)
 
-fit.gam.1 <- mgcv::gam(prop_risk ~ s(TimeAroundHW, bs="cc") +
+fit.gam.2 <- mgcv::gam(prop_risk ~ s(TimeAroundHW, bs="cc") +
                          s(lon,lat, by=TimeAroundHW)+
                          te(lon,lat, by=TimeAroundHW)+
                          s(lon,lat),
@@ -319,11 +339,11 @@ fit.gam.1 <- mgcv::gam(prop_risk ~ s(TimeAroundHW, bs="cc") +
                        data=dives_in_pentland_df,
                        method="ML")
 
-summary(fit.gam.1)
-plot(fit.gam.1)
+summary(fit.gam.2)
+plot(fit.gam.2)
 
-appraise(fit.gam.1)
-acf(resid(fit.gam.1))
+appraise(fit.gam.2)
+acf(resid(fit.gam.2))
 
 ## Cyclic spline for tidal smooth
 
@@ -342,15 +362,35 @@ model <- reformulate(c(-1,
                        "splines::bs(bathymetry)", "splines::bs(lon+lat)"), 
                      response = "prop_risk")
 
-fit1 <- geepack::geeglm(model,
+fit.pent <- geepack::geeglm(model,
                         family="binomial",
                         data=df,
                         id=as.factor(ref),
                         corstr = "independence")
 
-acf(fit1$residuals)
-summary(fit1)
-aod::wald.test(coef(fit1))
+acf(fit.pent$residuals)
+summary(fit.pent)
+anova(fit.pent)
+
+#Analysis of 'Wald statistic' Table
+#Model: binomial, link: logit
+#Response: prop_risk
+#Terms added sequentially (first to last)
+
+#Df   X2 P(>|Chi|)    
+#cyclic.1                 1  3.8    0.0502 .  
+#cyclic.2                 1  3.2    0.0748 .  
+#cyclic.3                 1  6.5    0.0110 *  
+#cyclic.4                 1 17.2   3.4e-05 ***
+#cyclic.5                 1  3.5    0.0602 .  
+#cyclic.6                 1 10.2    0.0014 ** 
+#cyclic.7                 1 25.8   3.8e-07 ***
+#splines::bs(bathymetry)  3 52.1   2.9e-11 ***
+#splines::bs(lon + lat)   3 24.9   1.6e-05 ***
+#  ---
+#  Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
 ## Partial effects
 #~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -369,11 +409,11 @@ par(mfrow=c(1,2))
 start=8; finish=10; Variable=dives_in_pentland_df$bathymetry; xlabel="Benthos"; ylabel="Proportion of dive in risk zone"
 PlottingVar1<-seq(min(Variable), max(Variable), length=500)
 
-CenterVar1<-model.matrix(fit1)[,c(1,start:finish)]*coef(fit1)[c(1,start:finish)]
-BootstrapCoefs1<-BootstrapParameters1[,c(1,start:finish)]
+CenterVar1<-model.matrix(fit.pent)[,c(start:finish)]*coef(fit.pent)[c(start:finish)]
+BootstrapCoefs1<-BootstrapParameters1[,c(start:finish)]
 
-Basis1<-gam(rbinom(500,2,0.5)~s(PlottingVar1, k=4), fit=F, family=binomial)$X[,1:4]
-RealFit1<-Basis1%*%coef(fit1)[c(1,start:finish)]
+Basis1<-gam(rbinom(500,2,0.5)~s(PlottingVar1, k=3), fit=F, family=binomial)$X
+RealFit1<-Basis1%*%coef(fit.pent)[c(start:finish)]
 RealFitCenter1<-RealFit1-mean(CenterVar1)
 RealFitCenter1a<-exp(RealFitCenter1)/(1+exp(RealFitCenter1))
 
@@ -403,15 +443,15 @@ benthos.pred <- ggplot()+
 start=1; finish=7; Variable=dives_in_pentland_df$TimeAroundHW; xlabel="Hours Around High Water"; ylabel="Proportion of dive in risk zone"
 PlottingVar2<-seq(min(Variable), max(Variable), length=500)
 
-CenterVar2<-model.matrix(fit1)[,c(1,start:finish)]*coef(fit1)[c(1,start:finish)]
-BootstrapCoefs2<-BootstrapParameters1[,c(1,start:finish)]
+CenterVar2<-model.matrix(fit.pent)[,c(start:finish)]*coef(fit.pent)[c(start:finish)]
+BootstrapCoefs2<-BootstrapParameters1[,c(start:finish)]
 
 Basis2<-gam(rbinom(500,2,0.5)~s(PlottingVar2, bs="cc", k=9), fit=F, family=binomial)$X
-RealFit2<-Basis2%*%coef(fit1)[c(1,start:finish)]
+RealFit2<-Basis2[,2:8]%*%coef(fit.pent)[c(start:finish)]
 RealFitCenter2<-RealFit2-mean(CenterVar2)
 RealFitCenter2a<-exp(RealFitCenter2)/(1+exp(RealFitCenter2))
 
-BootstrapFits2<-Basis2%*%t(BootstrapCoefs2)
+BootstrapFits2<-Basis2[,2:8]%*%t(BootstrapCoefs2)
 quant.func1<-function(x){quantile(x,probs=c(0.025, 0.975))}
 cis2<-apply(BootstrapFits2, 1, quant.func1)-mean(CenterVar2)
 cis2a<-inv.logit(cis2)
