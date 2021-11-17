@@ -15,6 +15,8 @@ require(gridExtra)
 ##load model data
 
 load(file="data/depth-data/code-output/mod-dive-dat.Rd")
+combined.dive <- combined.dive %>%
+  filter(prop_risk<1)
 load(file="data/mod-move-dat.Rd")
 
 ################################################################
@@ -37,6 +39,9 @@ pent_lr <- st_read("data/mapping/scotland/maximum-resolution/GSSHS_British_Isles
   st_set_crs(4326)
 pent_hr <- st_read("data/mapping/scotland/maximum-resolution/ScotLatLon.shp") %>%
   st_set_crs(4326)
+
+benthos <- raster::raster("data/mapping/Benthic/D4_2018.asc/benthos.tif")
+
 
 ## check you've just got meygen
 ggplot()+
@@ -326,7 +331,7 @@ gridExtra::grid.arrange(LowWater, Flood, HighWater, Ebb, top=textGrob("Predicted
 
 ##################################################################################################################################
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Proportion of dives within the risk zone - Pentland
+# Proportion of dives within the risk zone - Pentland Lease sites
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##################################################################################################################################
 dives_in_pentland_df <- arrange(dives_in_pentland_df, ref)
@@ -368,7 +373,6 @@ fit.pent <- geepack::geeglm(model,
                         id=as.factor(ref),
                         corstr = "independence")
 
-acf(fit.pent$residuals)
 summary(fit.pent)
 anova(fit.pent)
 
@@ -483,11 +487,10 @@ predgrid <- data.frame(expand.grid(lat=seq(min(dives_in_pentland_df$lat-0.01), m
                                    lon=seq(min(dives_in_pentland_df$lon-0.01), max(dives_in_pentland_df$lon+0.01), length.out = 150),
                                    TimeAroundHW=seq(-6, 6, by=1)))
 
-predgrid_sf <- st_join(st_as_sf(predgrid, coords=c("lon", "lat"), crs=4326), meygen, join=st_within)
+predgrid_sf <- st_join(st_as_sf(predgrid, coords=c("lon", "lat"), crs=4326), pentland_lease, join=st_within)
 predgrid_df <- predgrid[which(!is.na(predgrid_sf$Lease_Star), arr.ind=TRUE),]
 predgrid_df <-mutate(predgrid_df, name=predgrid_sf$Name_Ten[which(!is.na(predgrid_sf$Lease_Star), arr.ind=TRUE)])# have done all this fannying around as st_geomtery seems to round off the locations when retreiving from sf so subset the data frame before creating the snipped sf object
 
-benthos <- raster::raster("data/mapping/Benthic/D4_2018.asc/benthos.tif")
 
 coordinates(predgrid_df) <- ~ lon+lat
 
@@ -495,7 +498,7 @@ predgrid_df$bathymetry <- abs(raster::extract(benthos, predgrid_df))
 predgrid_df$bathymetry <- ifelse(predgrid_df$bathymetry < 0, 0, predgrid_df$bathymetry)
 predgrid_df <- na.omit(as.data.frame(predgrid_df))
 
-new_spline <- cSplineDes(predgrid_df$TimeAroundHW, 
+new_spline <- cSplineDes(predgrid_df$TimeAroundHW, # need to regenerate spline function for tide based on prediction data in same manner as for the model set in order to accurately represent original model predictions over different tidal states 
                          knots = seq(min(df$TimeAroundHW),
                                      max(df$TimeAroundHW),
                                      length.out = 8),
@@ -527,7 +530,7 @@ for(i in 1:length(sites)) {
   tide_time <- plot_tide_time[j]
   
   tide_predgrid <- newdf[newdf$TimeAroundHW==tide_time & newdf$name_abr==site_spec,]
-  tide_predgrid$preds <- predict(fit1, tide_predgrid, type="response")
+  tide_predgrid$preds <- predict(fit.pent, tide_predgrid, type="response")
   
   
   p <- ggplot()+
@@ -553,6 +556,225 @@ for(i in 1:length(sites)) {
 gridExtra::grid.arrange(LowWaterBrims, FloodBrims, HighWaterBrims, EbbBrims, top=textGrob("Predicted proportion of time in risk zone - Brims", gp = gpar(fontsize = 20, fontface = 'bold')))  
 gridExtra::grid.arrange(LowWaterMeygen, FloodMeygen, HighWaterMeygen, EbbMeygen, top=textGrob("Predicted proportion of time in risk zone - MeyGen", gp = gpar(fontsize = 20, fontface = 'bold')))  
 gridExtra::grid.arrange(LowWaterSPR, FloodSPR, HighWaterSPR, EbbSPR, top=textGrob("Predicted proportion of time in risk zone - SPR", gp = gpar(fontsize = 20, fontface = 'bold')))  
+
+
+
+##################################################################################################################################
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Proportion of dives within the risk zone - Pentland entire
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##################################################################################################################################
+dives_in_pentland_df <- arrange(combined.dive, ref)
+
+## Sample for test ##
+dives_in_pentland_df <- combined.dive %>%
+  sample_n(35000) %>%
+  arrange(ref)
+#######################
+
+fit.gam.2 <- mgcv::gam(prop_risk ~ s(TimeAroundHW, bs="cc") +
+                         s(lon,lat, by=TimeAroundHW)+
+                         te(lon,lat, by=TimeAroundHW)+
+                         s(lon,lat),
+                       family = "binomial",
+                       data=dives_in_pentland_df,
+                       method="ML")
+
+summary(fit.gam.2)
+plot(fit.gam.2)
+
+appraise(fit.gam.2)
+acf(resid(fit.gam.2))
+
+## Cyclic spline for tidal smooth
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~
+spl_bs <- cSplineDes(x = dives_in_pentland_df$TimeAroundHW, 
+                     knots = seq(min(dives_in_pentland_df$TimeAroundHW),
+                                 max(dives_in_pentland_df$TimeAroundHW),
+                                 length.out = 8), 
+                     ord = 4, derivs = 0)
+
+colnames(spl_bs) <- paste0("cyclic.", 1:ncol(spl_bs))
+df <- cbind(spl_bs, dives_in_pentland_df)
+
+model <- reformulate(c(-1,
+                       paste0("cyclic.", 1:(ncol(spl_bs))),
+                       "splines::bs(bathymetry)", "splines::bs(lon+lat)"), 
+                     response = "prop_risk")
+
+fit.pent <- geepack::geeglm(model,
+                            family="binomial",
+                            data=df,
+                            id=as.factor(ref),
+                            corstr = "independence")
+
+summary(fit.pent)
+anova(fit.pent)
+
+#Analysis of 'Wald statistic' Table
+#Model: binomial, link: logit
+#Response: prop_risk
+#Terms added sequentially (first to last)
+
+#Df   X2 P(>|Chi|)    
+#cyclic.1                 1  3.8    0.0502 .  
+#cyclic.2                 1  3.2    0.0748 .  
+#cyclic.3                 1  6.5    0.0110 *  
+#cyclic.4                 1 17.2   3.4e-05 ***
+#cyclic.5                 1  3.5    0.0602 .  
+#cyclic.6                 1 10.2    0.0014 ** 
+#cyclic.7                 1 25.8   3.8e-07 ***
+#splines::bs(bathymetry)  3 52.1   2.9e-11 ***
+#splines::bs(lon + lat)   3 24.9   1.6e-05 ***
+#  ---
+#  Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+## Partial effects
+#~~~~~~~~~~~~~~~~~~~~~~~~~
+
+quant.func<- function(x){quantile(x, probs=c(0.05,0.95))} # ci levels
+
+coefs<-coefficients(fit.pent) # Grabs the coefficients from your model
+
+varcov<- summary(fit.pent)$cov.unscaled # Grabs the variance-covariance matrix from your model
+varcov[lower.tri(varcov)] = t(varcov)[lower.tri(varcov)] # you will often get an error that your matrix is not symetric - it actually is but the the number of significant figures your covariance values go to is such that it sppears they are not. By definition the covariance matrix has to be symetric so this is just an R fault - this line ensures R knows the matrix is symetric.
+
+BootstrapParameters1 <- rmvnorm(500, coefs, varcov)
+
+par(mfrow=c(1,2))
+
+### Benthos
+start=8; finish=10; Variable=dives_in_pentland_df$bathymetry; xlabel="Benthos"; ylabel="Proportion of dive in risk zone"
+PlottingVar1<-seq(min(Variable), max(Variable), length=500)
+
+CenterVar1<-model.matrix(fit.pent)[,c(start:finish)]*coef(fit.pent)[c(start:finish)]
+BootstrapCoefs1<-BootstrapParameters1[,c(start:finish)]
+
+Basis1<-gam(rbinom(500,2,0.5)~s(PlottingVar1, k=3), fit=F, family=binomial)$X
+RealFit1<-Basis1%*%coef(fit.pent)[c(start:finish)]
+RealFitCenter1<-RealFit1-mean(CenterVar1)
+RealFitCenter1a<-exp(RealFitCenter1)/(1+exp(RealFitCenter1))
+
+BootstrapFits1<-Basis1%*%t(BootstrapCoefs1)
+quant.func1<-function(x){quantile(x,probs=c(0.025, 0.975))}
+cis1<-apply(BootstrapFits1, 1, quant.func1)-mean(CenterVar1)
+cis1a<-inv.logit(cis1)
+
+plot(PlottingVar1,(RealFitCenter1a), type="l", col=1,ylim=c(0, 1),xlab=xlabel, ylab=ylabel, xlim=c(min(PlottingVar1),max(PlottingVar1)), main="", cex.lab = 1.5, cex.axis=1.5)
+segments(PlottingVar1,(cis1a[1,]),PlottingVar1,(cis1a[2,]), col="grey", main = "Bathymetry relationship")
+lines(PlottingVar1,(RealFitCenter1a),lwd=2, col=1)
+rug(Variable)
+
+benthos.pred <- ggplot()+
+  geom_line(aes(x=PlottingVar1, y=RealFitCenter1a))+
+  geom_ribbon(aes(x=PlottingVar1, ymin=cis1a[1,], ymax=cis1a[2,]), alpha=0.1)+
+  theme_bw()+
+  labs(x="Bathymetric Depth (m)", y="Propotion of Dive in Risk Zone")+
+  theme(axis.text = element_text(size=24, family="serif"),
+        axis.title = element_text(size=24, family="serif"),
+        legend.text = element_text(family="serif"),
+        legend.title = element_text(family="serif"))+
+  geom_rug(aes(dives_in_pentland_df$bathymetry))+
+  NULL
+
+### Tide
+start=1; finish=7; Variable=dives_in_pentland_df$TimeAroundHW; xlabel="Hours Around High Water"; ylabel="Proportion of dive in risk zone"
+PlottingVar2<-seq(min(Variable), max(Variable), length=500)
+
+CenterVar2<-model.matrix(fit.pent)[,c(start:finish)]*coef(fit.pent)[c(start:finish)]
+BootstrapCoefs2<-BootstrapParameters1[,c(start:finish)]
+
+Basis2<-gam(rbinom(500,2,0.5)~s(PlottingVar2, bs="cc", k=9), fit=F, family=binomial)$X
+RealFit2<-Basis2[,2:8]%*%coef(fit.pent)[c(start:finish)]
+RealFitCenter2<-RealFit2-mean(CenterVar2)
+RealFitCenter2a<-exp(RealFitCenter2)/(1+exp(RealFitCenter2))
+
+BootstrapFits2<-Basis2[,2:8]%*%t(BootstrapCoefs2)
+quant.func1<-function(x){quantile(x,probs=c(0.025, 0.975))}
+cis2<-apply(BootstrapFits2, 1, quant.func1)-mean(CenterVar2)
+cis2a<-inv.logit(cis2)
+
+plot(PlottingVar2,(RealFitCenter2a), type="l", col=1,ylim=c(0, 1),xlab=xlabel, ylab=ylabel, xlim=c(min(PlottingVar2),max(PlottingVar2)), main="", cex.lab = 1.5, cex.axis=1.5)
+segments(PlottingVar2,(cis2a[1,]),PlottingVar2,(cis2a[2,]), col="grey", main = "Bathymetry relationship")
+lines(PlottingVar1,(RealFitCenter2a),lwd=2, col=1)
+rug(Variable)
+
+
+tide.pred <- ggplot()+
+  geom_line(aes(x=PlottingVar2, y=RealFitCenter2a))+
+  geom_ribbon(aes(x=PlottingVar2, ymin=cis2a[1,], ymax=cis2a[2,]), alpha=0.1)+
+  theme_bw()+
+  labs(x="Time Around High Water (hrs)", y="Propotion of Dive in Risk Zone")+
+  theme(axis.text = element_text(size=24, family="serif"),
+        axis.title.x = element_text(size=24, family="serif"),
+        axis.title.y = element_blank(),
+        legend.text = element_text(family="serif"),
+        legend.title = element_text(family="serif"))+
+  geom_rug(aes(dives_in_pentland_df$TimeAroundHW))+
+  NULL
+
+grid.arrange(benthos.pred, tide.pred, nrow=1)
+
+### Location predictions
+
+predgrid <- data.frame(expand.grid(lat=seq(min(dives_in_pentland_df$lat-0.01), max(dives_in_pentland_df$lat+0.01), length.out = 150),
+                                   lon=seq(min(dives_in_pentland_df$lon-0.01), max(dives_in_pentland_df$lon+0.01), length.out = 150),
+                                   TimeAroundHW=seq(-6, 6, by=1)))
+
+
+coordinates(predgrid) <- ~ lon+lat
+
+predgrid$bathymetry <- abs(raster::extract(benthos, predgrid))
+predgrid$bathymetry <- ifelse(predgrid$bathymetry < 0, 0, predgrid$bathymetry)
+predgrid <- na.omit(as.data.frame(predgrid))
+
+new_spline <- cSplineDes(predgrid$TimeAroundHW, # need to regenerate spline function for tide based on prediction data in same manner as for the model set in order to accurately represent original model predictions over different tidal states 
+                         knots = seq(min(df$TimeAroundHW),
+                                     max(df$TimeAroundHW),
+                                     length.out = 8),
+                         ord = 4, derivs=0)
+
+colnames(new_spline) <- paste0("cyclic.", 1:ncol(new_spline))
+
+newdf <- cbind(new_spline, predgrid)
+
+plot_tide_time <- c(-6, -3, 0, 3)
+plot_tide_names <- c("LowWater", "Flood", "HighWater", "Ebb")
+
+
+for(i in 1:length(plot_tide_names)) {
+  
+  
+    tide_time <- plot_tide_time[i]
+    
+    tide_predgrid <- newdf[newdf$TimeAroundHW==tide_time,]
+    tide_predgrid$preds <- predict(fit.pent, tide_predgrid, type="response")
+    
+    
+    p <- ggplot()+
+      geom_tile(data=tide_predgrid, aes(x=lon, y=lat, fill=preds)) +
+      scale_fill_viridis_c(limits=c(0,1), option="cividis") +
+      # annotation_spatial(data=pent_hr)+
+      theme_bw() +
+      ggtitle(paste(plot_tide_names[i])) +
+      labs(fill = "")+
+      theme(axis.text = element_text(size=16, family="serif"),
+            axis.title.x = element_text(size=16, family="serif"),
+            axis.title.y = element_blank(),
+            legend.text = element_text(family="serif"),
+            legend.title = element_text(family="serif"))+
+      annotation_spatial(data=pent_lr)+
+      NULL
+    
+    
+    assign(paste(plot_tide_names[i],sep=""), p)
+  }
+
+
+
+gridExtra::grid.arrange(LowWater, Flood, HighWater, Ebb, top=textGrob("Predicted proportion of time in risk zone", gp = gpar(fontsize = 20, fontface = 'bold')))  
 
 
 
